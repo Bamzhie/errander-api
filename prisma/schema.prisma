@@ -1,0 +1,108 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  email       String?  @unique
+  fullName    String
+  phoneNumber1 String   @unique
+  phoneNumber2 String?
+  userType    String   @default("customer") 
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations (MongoDB style - no foreign keys needed)
+  deliveries  Delivery[]
+  errander    Errander?
+  
+  @@map("users")
+}
+
+model Delivery {
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  // Sender reference (just ObjectId - MongoDB style)
+  senderId              String   @db.ObjectId
+  
+  // Denormalized sender info for faster queries (common MongoDB pattern)
+  senderName            String
+  senderPhone1          String
+  senderPhone2          String?
+  
+  // Item information
+  itemType              String
+  itemDescription       String?
+  
+  // Delivery information  
+  deliveryAddress       String
+  recipientName         String
+  recipientPhoneNumber  String
+  
+  // Package tracking and status
+  status                String   @default("PENDING")
+  trackingNumber        String         @unique @default(cuid())
+  
+  // Timestamps
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  estimatedDeliveryDate DateTime?
+  actualDeliveryDate    DateTime?
+  
+  // Additional fields
+  packageWeight         Float?
+  packageDimensions     String? 
+  deliveryFee           Float?
+  specialInstructions   String?
+  
+  // Optional relation (Prisma handles the ObjectId lookup)
+  sender                User?    @relation(fields: [senderId], references: [id])
+  
+  @@map("deliveries")
+}
+
+model Errander {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  // User reference
+  userId          String   @unique @db.ObjectId
+  
+  // Personal Information (denormalized for performance)
+  fullName        String
+  phoneNumber     String
+  whatsappNumber  String?
+  email           String?
+  
+  // School Information
+  school          String
+  
+  // Address
+  homeAddress     String
+  
+  // ID Card Information
+  idCardUrl       String?  // URL to uploaded ID card
+  idCardFileName  String?  // Original filename
+  
+  // Application Status
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED, SUSPENDED
+  
+  // Verification
+  isVerified      Boolean  @default(false)
+  verifiedAt      DateTime?
+  verifiedBy      String?  @db.ObjectId // Admin who verified
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Optional relation to User
+  user            User?    @relation(fields: [userId], references: [id])
+  
+  @@map("erranders")
+}
