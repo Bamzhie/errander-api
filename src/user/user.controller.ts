@@ -25,6 +25,12 @@ export class UserController {
     return this.userService.createDeliveryRequest(createUserDto);
   }
 
+  @Get('erranders')
+  async findAllErranders() {
+    return this.userService.findAllErranders();
+  }
+
+
  @Post('errander')
 @UseInterceptors(
   FileFieldsInterceptor([{ name: 'idCard', maxCount: 1 }], multerConfig),
@@ -66,6 +72,7 @@ async erranderSetup(
   findOne(@Param('id') id: string) {
     return this.userService.findOne(id);
   }
+
 
 
 

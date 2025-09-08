@@ -21,6 +21,6 @@ async function bootstrap() {
 
   console.log('uploads')
 
-  await app.listen(3000);
+  await app.listen(3031);
 }
 bootstrap();

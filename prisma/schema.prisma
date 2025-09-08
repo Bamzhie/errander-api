@@ -12,11 +12,13 @@ model User {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   email       String?  @unique
   fullName    String
-  phoneNumber1 String   @unique
+  phoneNumber1 String   
   phoneNumber2 String?
+  amount      Float?   @default(0)
   userType    String   @default("customer") 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  status      String @default("active")
   
   // Relations (MongoDB style - no foreign keys needed)
   deliveries  Delivery[]
@@ -44,6 +46,7 @@ model Delivery {
   deliveryAddress       String
   recipientName         String
   recipientPhoneNumber  String
+  amount      Float?   @default(0)
   
   // Package tracking and status
   status                String   @default("PENDING")
@@ -60,6 +63,10 @@ model Delivery {
   packageDimensions     String? 
   deliveryFee           Float?
   specialInstructions   String?
+
+  //Errander info
+  erranderId String? @db.ObjectId // Optional reference to Errander
+  errander   Errander? @relation(fields: [erranderId], references: [id])
   
   // Optional relation (Prisma handles the ObjectId lookup)
   sender                User?    @relation(fields: [senderId], references: [id])
@@ -103,6 +110,7 @@ model Errander {
   
   // Optional relation to User
   user            User?    @relation(fields: [userId], references: [id])
+  delieveries       Delivery[]
   
   @@map("erranders")
 }
