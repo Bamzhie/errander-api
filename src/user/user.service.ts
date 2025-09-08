@@ -7,6 +7,7 @@ import { CreateErranderDto } from './dto/create-errander.dto';
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
+  
   async createDeliveryRequest(dto: CreateDeliveryRequestDto) {
     let user = await this.prisma.user.findFirst({
       where: {
@@ -73,13 +74,13 @@ export class UserService {
             where: { senderId: user.id },
           });
 
-          // Calculate total spent by summing all delivery amounts
+          // Calculate total spent by summing all delivery fees (not amount from delivery, but from user.amount or deliveryFee)
           const deliveries = await this.prisma.delivery.findMany({
             where: { senderId: user.id },
-            select: { amount: true },
+            select: { deliveryFee: true },
           });
           const totalSpent = deliveries.reduce(
-            (sum, delivery) => sum + (delivery.amount || 0),
+            (sum, delivery) => sum + (delivery.deliveryFee || 0),
             0,
           );
 
@@ -167,10 +168,10 @@ export class UserService {
 
       const deliveries = await this.prisma.delivery.findMany({
         where: { senderId: user.id },
-        select: { amount: true },
+        select: { deliveryFee: true },
       });
       const totalSpent = deliveries.reduce(
-        (sum, delivery) => sum + (delivery.amount || 0),
+        (sum, delivery) => sum + (delivery.deliveryFee || 0),
         0,
       );
 
@@ -345,12 +346,14 @@ export class UserService {
 
       const errandersWithStats = await Promise.all(
         erranders.map(async (errander) => {
+          // Count deliveries where this errander was assigned
           const totalDeliveries = await this.prisma.delivery.count({
             where: {
               erranderId: errander.id,
             },
           });
 
+          // Calculate earnings from deliveries assigned to this errander
           const deliveries = await this.prisma.delivery.findMany({
             where: {
               erranderId: errander.id,
@@ -362,6 +365,7 @@ export class UserService {
             0,
           );
 
+          // Get last delivery date for this errander
           const lastDelivery = await this.prisma.delivery.findFirst({
             where: {
               erranderId: errander.id,
@@ -371,6 +375,7 @@ export class UserService {
           });
           const lastActive = lastDelivery?.createdAt;
 
+          // Map errander status to display status
           let status: string;
           switch (errander.status.toLowerCase()) {
             case 'approved':
@@ -388,6 +393,17 @@ export class UserService {
               status = 'offline';
           }
 
+          // Format last active time
+          let lastActiveFormatted = 'Never';
+          if (lastActive) {
+            const timeDiff = Date.now() - lastActive.getTime();
+            if (timeDiff < 3600000) { // Less than 1 hour
+              lastActiveFormatted = 'Recent';
+            } else {
+              lastActiveFormatted = lastActive.toISOString().split('T')[0];
+            }
+          }
+
           return {
             id: errander.id,
             name: errander.fullName,
@@ -398,14 +414,8 @@ export class UserService {
             totalDeliveries,
             joinDate: errander.user
               ? errander.user.createdAt.toISOString().split('T')[0]
-              : new Date().toISOString().split('T')[0],
-            lastActive: lastActive
-              ? new Date(
-                  Date.now() - lastActive.getTime() < 3600000
-                    ? 'Recent'
-                    : lastActive.toISOString().split('T')[0],
-                )
-              : 'Never',
+              : errander.createdAt.toISOString().split('T')[0],
+            lastActive: lastActiveFormatted,
             earnings,
             idCardUrl: errander.idCardUrl,
           };
@@ -422,7 +432,7 @@ export class UserService {
         statuscode: '01',
         status: 'FAILED',
         message: 'Failed to fetch erranders: ' + error.message,
-      }
+      };
     }
   }
 }
