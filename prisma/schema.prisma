@@ -10,33 +10,44 @@ datasource db {
 
 model User {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  email       String?  @unique
+  email       String?
   fullName    String
-  phoneNumber1 String   
+  phoneNumber1 String
   phoneNumber2 String?
   amount      Float?   @default(0)
-  userType    String   @default("customer") 
+  userType    String   @default("customer") // Could be: customer, errander, admin
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   status      String @default("active")
+
+  // Errander-specific fields (nullable for non-erranders)
+  whatsappNumber  String?
+  school          String?
+  homeAddress     String?
+  idCardUrl       String?
+  idCardFileName  String?
+  isVerified      Boolean  @default(false)
+  verifiedAt      DateTime?
+  verifiedBy      String?  @db.ObjectId
   
-  // Relations (MongoDB style - no foreign keys needed)
-  deliveries  Delivery[]
-  errander    Errander?
-  
+  // Application Status (for erranders)
+  erranderStatus  String?  @default("PENDING") // PENDING, APPROVED, REJECTED, SUSPENDED
+
+  // Relations
+  sentDeliveries  Delivery[] @relation("SenderDeliveries")
+  assignedDeliveries Delivery[] @relation("ErranderDeliveries")
+
   @@map("users")
 }
 
 model Delivery {
   id                    String   @id @default(auto()) @map("_id") @db.ObjectId
-  
-  // Sender reference (just ObjectId - MongoDB style)
   senderId              String   @db.ObjectId
+  erranderId            String?  @db.ObjectId
   
-  // Denormalized sender info for faster queries (common MongoDB pattern)
-  senderName            String
-  senderPhone1          String
-  senderPhone2          String?
+  // Denormalized sender info (optional, for performance)
+  senderName            String?
+  senderPhone1          String?
   
   // Item information
   itemType              String
@@ -64,53 +75,9 @@ model Delivery {
   deliveryFee           Float?
   specialInstructions   String?
 
-  //Errander info
-  erranderId String? @db.ObjectId // Optional reference to Errander
-  errander   Errander? @relation(fields: [erranderId], references: [id])
   
-  // Optional relation (Prisma handles the ObjectId lookup)
-  sender                User?    @relation(fields: [senderId], references: [id])
-  
-  @@map("deliveries")
-}
+  sender                User?    @relation("SenderDeliveries", fields: [senderId], references: [id])
+  errander              User?    @relation("ErranderDeliveries", fields: [erranderId], references: [id])
 
-model Errander {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  
-  // User reference
-  userId          String   @unique @db.ObjectId
-  
-  // Personal Information (denormalized for performance)
-  fullName        String
-  phoneNumber     String
-  whatsappNumber  String?
-  email           String?
-  
-  // School Information
-  school          String
-  
-  // Address
-  homeAddress     String
-  
-  // ID Card Information
-  idCardUrl       String?  // URL to uploaded ID card
-  idCardFileName  String?  // Original filename
-  
-  // Application Status
-  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED, SUSPENDED
-  
-  // Verification
-  isVerified      Boolean  @default(false)
-  verifiedAt      DateTime?
-  verifiedBy      String?  @db.ObjectId // Admin who verified
-  
-  // Timestamps
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  // Optional relation to User
-  user            User?    @relation(fields: [userId], references: [id])
-  delieveries       Delivery[]
-  
-  @@map("erranders")
+  @@map("deliveries")
 }

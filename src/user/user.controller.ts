@@ -15,6 +15,7 @@ import multer from 'multer';
 import { multerConfig } from 'src/file/multer.config';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { CreateErranderDto } from './dto/create-errander.dto';
+import { UpdateDeliveryDto } from './dto/update-delievery.dto';
 
 @Controller('user')
 export class UserController {
@@ -30,37 +31,60 @@ export class UserController {
     return this.userService.findAllErranders();
   }
 
+  @Post('errander')
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'idCard', maxCount: 1 }], multerConfig),
+  )
+  async erranderSetup(
+    @UploadedFiles()
+    files: {
+      idCard?: Express.Multer.File[];
+    },
+    @Body() dto: CreateErranderDto,
+  ) {
+    if (!files.idCard)
+      return {
+        statuscode: '01',
+        status: 'FAILED',
+        message: 'ID Card file is required for errander application',
+      };
 
- @Post('errander')
-@UseInterceptors(
-  FileFieldsInterceptor([{ name: 'idCard', maxCount: 1 }], multerConfig),
-)
-async erranderSetup(
-  @UploadedFiles()
-  files: {
-    idCard?: Express.Multer.File[];
-  },
-  @Body() dto: CreateErranderDto,
-) {
-  if (!files.idCard)
-    return {
-      statuscode: '01',
-      status: 'FAILED',
-      message: 'ID Card file is required for errander application',
-    };
+    const baseUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/uploads`;
+    const idCardUrl = `${baseUrl}/${files.idCard[0].filename}`;
 
-  const baseUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/uploads`;
-  const idCardUrl = `${baseUrl}/${files.idCard[0].filename}`;
-
-  try {
-    return await this.userService.createErrander(dto, idCardUrl);
-  } catch (error) {
-    return {
-      statuscode: '01',
-      status: 'FAILED',
-      message: error.message || 'Failed to create errander application',
-    };
+    try {
+      return await this.userService.createErrander(dto, idCardUrl);
+    } catch (error) {
+      return {
+        statuscode: '01',
+        status: 'FAILED',
+        message: error.message || 'Failed to create errander application',
+      };
+    }
   }
+
+  @Get('delieveries')
+  findAllDeliveries() {
+    return this.userService.findAllDeliveries();
+  }
+
+
+  @Get('delievery/:id')
+  findOneDelivery(@Param('id') id: string) {
+    return this.userService.findOneDelivery(id);
+  }
+
+  @Get('errander/:id')
+  findOneErrander(@Param('id') id: string) {
+    return this.userService.getErranderByUserId(id);
+  }
+
+  @Patch('delievery/:id')
+updateDelivery(
+  @Param('id') id: string,
+  @Body() updateDeliveryDto: UpdateDeliveryDto,
+) {
+  return this.userService.updateDeliveryStatus(id, updateDeliveryDto);
 }
 
   @Get()
@@ -68,13 +92,11 @@ async erranderSetup(
     return this.userService.findAll();
   }
 
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.userService.findOne(id);
   }
-
-
-
 
   @Delete(':id')
   remove(@Param('id') id: string) {
