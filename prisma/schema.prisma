@@ -74,6 +74,7 @@ model Delivery {
   packageDimensions     String? 
   deliveryFee           Float?
   specialInstructions   String?
+  images   String?
 
   
   sender                User?    @relation("SenderDeliveries", fields: [senderId], references: [id])

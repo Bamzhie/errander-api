@@ -92,6 +92,11 @@ updateDelivery(
     return this.userService.findAll();
   }
 
+  @Get('dashboard')
+  getDashboardStats() {
+    return this.userService.getDashboardData();
+  }
+
 
   @Get(':id')
   findOne(@Param('id') id: string) {

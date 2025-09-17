@@ -3,8 +3,11 @@ import { CreateDeliveryRequestDto } from './dto/create-delievery.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateErranderDto } from './dto/create-errander.dto';
-import { UpdateDeliveryDto } from './dto/update-delievery.dto';
-
+import {
+  UpdateDeliveryDto,
+  DeliveryStatus,
+  ValidStatuses,
+} from './dto/update-delievery.dto';
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
@@ -219,7 +222,12 @@ export class UserService {
             },
           },
           errander: {
-            select: { fullName: true, id: true, email: true, whatsappNumber: true },
+            select: {
+              fullName: true,
+              id: true,
+              email: true,
+              whatsappNumber: true,
+            },
           },
         },
         orderBy: {
@@ -239,7 +247,7 @@ export class UserService {
         receiver: delivery.recipientName,
         receiverPhone: delivery.recipientPhoneNumber,
         deliveryAddress: delivery.deliveryAddress,
-        
+
         itemType: delivery.itemType,
         itemDescription: delivery.itemDescription || 'N/A',
         specialInstructions: delivery.specialInstructions || 'None',
@@ -252,12 +260,14 @@ export class UserService {
         estimatedDeliveryDate:
           delivery.estimatedDeliveryDate?.toISOString() || 'N/A',
         deliveryFee: delivery.deliveryFee || 0,
-        errander: delivery.errander ? {
-        id: delivery.errander.id,
-        name: delivery.errander.fullName,
-        email: delivery.errander.email,
-        phone: delivery.errander.whatsappNumber,
-      } : null,
+        errander: delivery.errander
+          ? {
+              id: delivery.errander.id,
+              name: delivery.errander.fullName,
+              email: delivery.errander.email,
+              phone: delivery.errander.whatsappNumber,
+            }
+          : null,
       }));
 
       return {
@@ -274,109 +284,118 @@ export class UserService {
     }
   }
 
-async findOneDelivery(id: string) {
-  try {
-    const delivery = await this.prisma.delivery.findFirst({
-      where: {
-        id,
-      },
-      include: {
-        sender: {
-          select: {
-            fullName: true,
-            email: true,
-            phoneNumber1: true,
-            phoneNumber2: true,
+  async findOneDelivery(id: string) {
+    try {
+      const delivery = await this.prisma.delivery.findFirst({
+        where: {
+          id,
+        },
+        include: {
+          sender: {
+            select: {
+              fullName: true,
+              email: true,
+              phoneNumber1: true,
+              phoneNumber2: true,
+            },
+          },
+          errander: {
+            select: {
+              id: true,
+              fullName: true,
+              phoneNumber1: true,
+              whatsappNumber: true,
+              email: true,
+            },
           },
         },
-        errander: {
-          select: { 
-            id: true,
-            fullName: true,
-            phoneNumber1: true,
-            whatsappNumber: true,
-            email: true,
-          },
-        },
-      },
-    });
+      });
 
-    if (!delivery) {
+      if (!delivery) {
+        return {
+          success: false,
+          statusCode: 404,
+          message: `Delivery with ID ${id} not found`,
+          data: null,
+        };
+      }
+
+      // Create separate errander object
+      const erranderDetails = delivery.errander
+        ? {
+            id: delivery.errander.id,
+            fullName: delivery.errander.fullName,
+            phone: delivery.errander.phoneNumber1,
+            whatsapp: delivery.errander.whatsappNumber || 'N/A',
+            email: delivery.errander.email || 'N/A',
+          }
+        : null;
+
+      const mappedDelivery = {
+        id: delivery.id,
+        orderNumber: delivery.trackingNumber,
+        sender: {
+          name:
+            delivery.sender?.fullName ||
+            delivery.senderName ||
+            'Unknown Sender',
+          email: delivery.sender?.email || 'N/A',
+          phone1:
+            delivery.sender?.phoneNumber1 || delivery.senderPhone1 || 'N/A',
+          phone2: delivery.sender?.phoneNumber2 || 'N/A',
+        },
+        receiver: {
+          name: delivery.recipientName,
+          phone: delivery.recipientPhoneNumber,
+        },
+        deliveryAddress: delivery.deliveryAddress,
+        itemDetails: {
+          type: delivery.itemType,
+          description: delivery.itemDescription || 'N/A',
+          specialInstructions: delivery.specialInstructions || 'None',
+        },
+        status: this.normalizeStatus(delivery.status),
+        timeline: {
+          createdAt: delivery.createdAt.toISOString(),
+          estimatedDeliveryDate:
+            delivery.estimatedDeliveryDate?.toISOString() || 'N/A',
+        },
+        deliveryFee: delivery.deliveryFee || 0,
+        errander: erranderDetails,
+      };
+
+      return {
+        success: '01',
+        statusCode: 200,
+        message: 'Delivery fetched successfully',
+        data: mappedDelivery,
+      };
+    } catch (error) {
+      console.error(`Error fetching delivery ${id}:`, error);
       return {
         success: false,
-        statusCode: 404,
-        message: `Delivery with ID ${id} not found`,
-        data: null,
+        statusCode: 500,
+        message: 'Failed to fetch delivery: ' + error.message,
       };
     }
-
-    // Create separate errander object
-    const erranderDetails = delivery.errander ? {
-      id: delivery.errander.id,
-      fullName: delivery.errander.fullName,
-      phone: delivery.errander.phoneNumber1,
-      whatsapp: delivery.errander.whatsappNumber || 'N/A',
-      email: delivery.errander.email || 'N/A',
-    } : null;
-
-    const mappedDelivery = {
-      id: delivery.id,
-      orderNumber: delivery.trackingNumber,
-      sender: {
-        name: delivery.sender?.fullName || delivery.senderName || 'Unknown Sender',
-        email: delivery.sender?.email || 'N/A',
-        phone1: delivery.sender?.phoneNumber1 || delivery.senderPhone1 || 'N/A',
-        phone2: delivery.sender?.phoneNumber2 || 'N/A',
-      },
-      receiver: {
-        name: delivery.recipientName,
-        phone: delivery.recipientPhoneNumber,
-      },
-      deliveryAddress: delivery.deliveryAddress,
-      itemDetails: {
-        type: delivery.itemType,
-        description: delivery.itemDescription || 'N/A',
-        specialInstructions: delivery.specialInstructions || 'None',
-      },
-      status: this.normalizeStatus(delivery.status),
-      timeline: {
-        createdAt: delivery.createdAt.toISOString(),
-        estimatedDeliveryDate: delivery.estimatedDeliveryDate?.toISOString() || 'N/A',
-      },
-      deliveryFee: delivery.deliveryFee || 0,
-      errander: erranderDetails,
-    };
-
-    return {
-      success: '01',
-      statusCode: 200,
-      message: 'Delivery fetched successfully',
-      data: mappedDelivery,
-    };
-  } catch (error) {
-    console.error(`Error fetching delivery ${id}:`, error);
-    return {
-      success: false,
-      statusCode: 500,
-      message: 'Failed to fetch delivery: ' + error.message,
-    };
   }
-}
 
-// Helper method to normalize status values (reuse from previous example)
-private normalizeStatus(status: string): 'pending' | 'in-transit' | 'delivered' | 'cancelled' {
-  const normalizedStatus = status.toLowerCase().trim();
-  
-  switch (normalizedStatus) {
-    case 'pending':
-    case 'in-transit':
-    case 'delivered':
-    case 'cancelled':
-      return normalizedStatus;
-    default:
-      return 'pending';
+  // Helper method to normalize status values (reuse from previous example)
+  private normalizeStatus(
+    status: string,
+  ): 'pending' | 'in-transit' | 'delivered' | 'cancelled' {
+    const normalizedStatus = status.toLowerCase().trim();
+
+    switch (normalizedStatus) {
+      case 'pending':
+      case 'in-transit':
+      case 'delivered':
+      case 'cancelled':
+        return normalizedStatus;
+      default:
+        return 'pending';
+    }
   }
-}
 
   update(id: number, updateUserDto: UpdateUserDto) {
     return `This action updates a #${id} user`;
@@ -615,27 +634,118 @@ private normalizeStatus(status: string): 'pending' | 'in-transit' | 'delivered' 
     }
   }
 
-async updateDeliveryStatus(id: string, updateDto: UpdateDeliveryDto) {
-  try {
-    // Fetch current delivery to get existing values
-    const currentDelivery = await this.prisma.delivery.findUnique({
-      where: { id },
-      select: {
-        erranderId: true,
-        deliveryFee: true,
-        status: true,
-      },
-    });
+  async updateDeliveryStatus(id: string, updateDto: UpdateDeliveryDto) {
+    try {
+      // Early validation with optimized lookups
+      const validationError = this.validateUpdateDto(updateDto);
+      if (validationError) {
+        return this.createErrorResponse(validationError);
+      }
 
-    if (!currentDelivery) {
+      // Fetch current delivery with optimized select
+      const currentDelivery = await this.prisma.delivery.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          trackingNumber: true,
+          senderName: true,
+          recipientName: true,
+          recipientPhoneNumber: true,
+          deliveryAddress: true,
+          itemType: true,
+          itemDescription: true,
+          specialInstructions: true,
+          status: true,
+          deliveryFee: true,
+          erranderId: true,
+          createdAt: true,
+          estimatedDeliveryDate: true,
+          images: true,
+          sender: {
+            select: {
+              fullName: true,
+              email: true,
+              phoneNumber1: true,
+              phoneNumber2: true,
+            },
+          },
+          errander: {
+            select: {
+              id: true,
+              fullName: true,
+              phoneNumber1: true,
+              whatsappNumber: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!currentDelivery) {
+        return this.createErrorResponse('Delivery not found');
+      }
+
+      // Business logic validation
+      const businessValidationError = await this.validateBusinessRules(
+        updateDto,
+        currentDelivery,
+      );
+      if (businessValidationError) {
+        return this.createErrorResponse(businessValidationError);
+      }
+
+      // Prepare all operations
+      const { updateData, userOperations } = this.prepareOperations(
+        updateDto,
+        currentDelivery,
+      );
+
+      // Execute all database operations in parallel
+      const [updatedDelivery] = await Promise.all([
+        this.prisma.delivery.update({
+          where: { id },
+          data: updateData,
+          include: {
+            sender: {
+              select: {
+                fullName: true,
+                email: true,
+                phoneNumber1: true,
+                phoneNumber2: true,
+              },
+            },
+            errander: {
+              select: {
+                id: true,
+                fullName: true,
+                phoneNumber1: true,
+                whatsappNumber: true,
+                email: true,
+              },
+            },
+          },
+        }),
+        ...userOperations,
+      ]);
+
       return {
-        statuscode: '01',
-        status: 'FAILED',
-        message: 'Delivery not found',
+        statuscode: '00',
+        status: 'SUCCESS',
+        message: 'Delivery updated successfully',
+        data: this.mapDeliveryResponse(updatedDelivery),
       };
+    } catch (error) {
+      return this.createErrorResponse(
+        'Failed to update delivery: ' +
+          (error instanceof Error ? error.message : 'Unknown error'),
+      );
     }
+  }
 
-    const validStatuses = [
+  // Optimized validation methods
+  private validateUpdateDto(updateDto: UpdateDeliveryDto): string | null {
+    // Use Set for O(1) lookup performance
+    const VALID_STATUSES = new Set<DeliveryStatus>([
       'pending',
       'confirmed',
       'picked_up',
@@ -643,175 +753,304 @@ async updateDeliveryStatus(id: string, updateDto: UpdateDeliveryDto) {
       'delivered',
       'failed_delivery',
       'cancelled',
-    ];
+    ]);
 
-    if (updateDto.status) {
-      const statusLower = updateDto.status.toLowerCase();
-      if (!validStatuses.includes(statusLower)) {
-        return {
-          statuscode: '01',
-          status: 'FAILED',
-          message: 'Invalid status value',
-        };
-      }
+    if (
+      updateDto.status &&
+      !VALID_STATUSES.has(updateDto.status.toLowerCase() as DeliveryStatus)
+    ) {
+      return 'Invalid status value';
     }
 
-    // Use existing values if not provided in update
-    const effectiveErranderId = updateDto.erranderId ?? currentDelivery.erranderId;
-    // If updateDto.deliveryFee is undefined, fall back to currentDelivery.deliveryFee
-    const effectiveDeliveryFee = updateDto.deliveryFee ?? currentDelivery.deliveryFee;
+    if (updateDto.deliveryFee !== undefined && updateDto.deliveryFee <= 0) {
+      return 'Delivery fee must be a positive number';
+    }
 
-    // Validate erranderId only if explicitly provided in update
+    return null;
+  }
+
+  private async validateBusinessRules(
+    updateDto: UpdateDeliveryDto,
+    currentDelivery: any,
+  ): Promise<string | null> {
+    // Validate errander exists if provided
     if (updateDto.erranderId !== undefined && updateDto.erranderId) {
       const errander = await this.prisma.user.findFirst({
-        where: { 
-          id: updateDto.erranderId, 
-          userType: 'errander',
-        },
+        where: { id: updateDto.erranderId, userType: 'errander' },
+        select: { id: true },
       });
 
       if (!errander) {
-        return {
-          statuscode: '01',
-          status: 'FAILED',
-          message: 'No errander found with the provided ID',
-        };
+        return 'No errander found with the provided ID';
       }
     }
 
-    // Validation for status transitions to 'in-transit' or 'delivered'
+    // Status-specific business rules
     if (updateDto.status) {
-      const lowerStatus = updateDto.status.toLowerCase();
-      if (lowerStatus === 'in-transit' || lowerStatus === 'delivered') {
+      const lowerStatus = updateDto.status.toLowerCase() as DeliveryStatus;
+      const effectiveErranderId =
+        updateDto.erranderId ?? currentDelivery.erranderId;
+      const effectiveDeliveryFee =
+        updateDto.deliveryFee ?? currentDelivery.deliveryFee;
+
+      // Validate status transitions
+      if (['in-transit', 'delivered'].includes(lowerStatus)) {
         if (!effectiveErranderId) {
-          return {
-            statuscode: '01',
-            status: 'FAILED',
-            message: 'Errander ID is required for status transition to in-transit or delivered',
-          };
+          return 'Errander ID is required for status transition to in-transit or delivered';
         }
-        // Explicitly check for null or undefined, and ensure fee is positive
-        if (effectiveDeliveryFee === null || effectiveDeliveryFee === undefined || effectiveDeliveryFee <= 0) {
-          return {
-            statuscode: '01',
-            status: 'FAILED',
-            message: 'A positive delivery fee is required for status transition to in-transit or delivered',
-          };
+        if (!effectiveDeliveryFee || effectiveDeliveryFee <= 0) {
+          return 'A positive delivery fee is required for status transition to in-transit or delivered';
         }
       }
-      // Allow 'confirmed' without requiring erranderId or deliveryFee
-      if (lowerStatus === 'confirmed' && currentDelivery.status.toLowerCase() !== 'pending') {
-        return {
-          statuscode: '01',
-          status: 'FAILED',
-          message: 'Can only transition to confirmed from pending status',
-        };
+
+      if (
+        lowerStatus === 'confirmed' &&
+        currentDelivery.status.toLowerCase() !== 'pending'
+      ) {
+        return 'Can only transition to confirmed from pending status';
       }
     }
 
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
+    return null;
+  }
 
+  private prepareOperations(
+    updateDto: UpdateDeliveryDto,
+    currentDelivery: any,
+  ) {
+    const updateData: any = { updatedAt: new Date() };
+    const userOperations: Promise<any>[] = [];
+
+    // Handle status updates
     if (updateDto.status) {
+      const lowerStatus = updateDto.status.toLowerCase() as DeliveryStatus;
       updateData.status = updateDto.status.toUpperCase();
-      const lowerStatus = updateDto.status.toLowerCase();
+
       if (lowerStatus === 'delivered') {
         updateData.actualDeliveryDate = new Date();
       }
+
       if (lowerStatus === 'in-transit' && updateDto.erranderId) {
-        // Update errander status to 'on-delivery' only if new assignment
-        await this.prisma.user.update({
-          where: { id: updateDto.erranderId },
-          data: { erranderStatus: 'ON-DELIVERY' },
-        });
+        userOperations.push(
+          this.prisma.user.update({
+            where: { id: updateDto.erranderId },
+            data: { erranderStatus: 'ON-DELIVERY' },
+          }),
+        );
       }
+
       if (lowerStatus === 'cancelled') {
-        // Reset errander assignment if one was set
         if (currentDelivery.erranderId) {
-          await this.prisma.user.update({
-            where: { id: currentDelivery.erranderId },
-            data: { erranderStatus: 'APPROVED' },
-          });
+          userOperations.push(
+            this.prisma.user.update({
+              where: { id: currentDelivery.erranderId },
+              data: { erranderStatus: 'APPROVED' },
+            }),
+          );
         }
-        updateData.erranderId = null; // Clear assignment
+        updateData.erranderId = null;
       }
     }
 
+    // Handle errander updates
     if (updateDto.erranderId !== undefined) {
+      updateData.erranderId = updateDto.erranderId;
+
       if (updateDto.erranderId) {
-        // Update errander status to on-delivery if assigning
-        await this.prisma.user.update({
-          where: { id: updateDto.erranderId },
-          data: { erranderStatus: 'ON-DELIVERY' },
-        });
-      } else {
-        // If clearing assignment
-        if (currentDelivery.erranderId) {
-          await this.prisma.user.update({
+        userOperations.push(
+          this.prisma.user.update({
+            where: { id: updateDto.erranderId },
+            data: { erranderStatus: 'ON-DELIVERY' },
+          }),
+        );
+      } else if (currentDelivery.erranderId) {
+        userOperations.push(
+          this.prisma.user.update({
             where: { id: currentDelivery.erranderId },
             data: { erranderStatus: 'APPROVED' },
-          });
-        }
+          }),
+        );
       }
-      updateData.erranderId = updateDto.erranderId;
     }
 
+    // Handle delivery fee updates
     if (updateDto.deliveryFee !== undefined) {
-      if (updateDto.deliveryFee <= 0) {
-        return {
-          statuscode: '01',
-          status: 'FAILED',
-          message: 'Delivery fee must be a positive number',
-        };
-      }
       updateData.deliveryFee = updateDto.deliveryFee;
     }
 
-    const delivery = await this.prisma.delivery.update({
-      where: { id },
-      data: updateData,
-      include: {
-        sender: {
-          select: { fullName: true },
-        },
-        errander: {
-          select: { fullName: true },
-        },
-      },
-    });
+    return { updateData, userOperations };
+  }
 
-    const mappedDelivery = {
+  private mapDeliveryResponse(delivery: any) {
+    return {
       id: delivery.id,
       orderNumber: delivery.trackingNumber,
-      sender: delivery.sender?.fullName || delivery.senderName || 'Unknown Sender',
-      receiver: delivery.recipientName,
-      errander: delivery.errander?.fullName || 'Unassigned',
-      itemType: delivery.itemType,
-      itemDescription: delivery.itemDescription || 'N/A',
-      status: delivery.status.toLowerCase() as
-        | 'pending'
-        | 'confirmed'
-        | 'picked_up'
-        | 'in-transit'
-        | 'delivered'
-        | 'failed_delivery'
-        | 'cancelled',
+      sender: {
+        name:
+          delivery.sender?.fullName || delivery.senderName || 'Unknown Sender',
+        email: delivery.sender?.email || 'N/A',
+        phone1: delivery.sender?.phoneNumber1 || 'N/A',
+        phone2: delivery.sender?.phoneNumber2 || 'N/A',
+      },
+      receiver: {
+        name: delivery.recipientName,
+        phone: delivery.recipientPhoneNumber || 'N/A',
+      },
+      deliveryAddress: delivery.deliveryAddress || 'N/A',
+      itemDetails: {
+        type: delivery.itemType,
+        description: delivery.itemDescription || 'N/A',
+        specialInstructions: delivery.specialInstructions || 'None',
+      },
+      status: delivery.status.toLowerCase() as DeliveryStatus,
+      timeline: {
+        createdAt: delivery.createdAt.toISOString(),
+        estimatedDeliveryDate:
+          delivery.estimatedDeliveryDate?.toISOString() || 'N/A',
+      },
       deliveryFee: delivery.deliveryFee || 0,
+      errander: delivery.errander
+        ? {
+            id: delivery.errander.id,
+            fullName: delivery.errander.fullName,
+            phone: delivery.errander.phoneNumber1 || 'N/A',
+            whatsapp: delivery.errander.whatsappNumber || 'N/A',
+            email: delivery.errander.email || 'N/A',
+          }
+        : null,
+      images: delivery.images || [],
     };
+  }
 
-    return {
-      statuscode: '00',
-      status: 'SUCCESS',
-      message: 'Delivery updated successfully',
-      data: mappedDelivery,
-    };
-  } catch (error) {
+  private createErrorResponse(message: string) {
     return {
       statuscode: '01',
       status: 'FAILED',
-      message: 'Failed to update delivery: ' + error.message,
+      message,
     };
   }
+
+async getDashboardData() {
+  // Get all data in parallel for better performance
+  const [totalCustomers, totalErranders, deliveries, users] = await Promise.all([
+    this.prisma.user.count({ where: { userType: 'customer' } }),
+    this.prisma.user.count({ where: { userType: 'errander' } }),
+    this.prisma.delivery.findMany(),
+    this.prisma.user.findMany(),
+  ]);
+
+  // Process deliveries data
+  const totalDeliveries = deliveries.length;
+  const pendingDeliveries = deliveries.filter((d) => d.status === 'PENDING').length;
+  const completedDeliveries = deliveries.filter((d) => d.status === 'DELIVERED').length;
+  const inTransitDeliveries = deliveries.filter((d) => d.status === 'IN_TRANSIT').length;
+  const cancelledDeliveries = deliveries.filter((d) => d.status === 'CANCELLED').length;
+
+  // Calculate total revenue based on deliveryFee of DELIVERED deliveries
+  const totalRevenue = deliveries
+    .filter((d) => d.status === 'DELIVERED')
+    .reduce((sum, d) => sum + (d.deliveryFee || 0), 0);
+
+  // Process erranders data
+  const erranders = users.filter((u) => u.userType === 'errander');
+  const availableErranders = erranders.filter(
+    (e) => e.status === 'active' && e.erranderStatus === 'APPROVED',
+  ).length;
+  const onTripErranders = erranders.filter(
+    (e) => e.status === 'active' && e.erranderStatus === 'APPROVED',
+  ).length; // You may want to refine this based on trips
+  const offlineErranders = erranders.filter((e) => e.status !== 'active').length;
+  const activeErranders = erranders.filter(
+    (e) => e.status === 'active' && e.erranderStatus === 'APPROVED',
+  ).length;
+
+  // Generate recent activities
+  const recentActivities = this.generateRecentActivities(deliveries);
+
+  return {
+    success: true,
+    message: 'Dashboard data fetched successfully',
+    data: {
+      stats: {
+        totalRevenue,
+        totalCustomers,
+        totalDeliveries,
+        pendingDeliveries,
+        completedDeliveries,
+        inTransitDeliveries,
+        cancelledDeliveries,
+        activeErranders,
+        availableErranders,
+        onTripErranders,
+        offlineErranders,
+        totalErranders,
+      },
+      recentActivities,
+    },
+  };
 }
+
+
+  private generateRecentActivities(deliveries: any[]) {
+    const sortedDeliveries = deliveries
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .slice(0, 5);
+
+    return sortedDeliveries.map((delivery) => {
+      let activityType: string;
+      let message: string;
+      let color: string;
+
+      switch (delivery.status) {
+        case 'DELIVERED':
+          activityType = 'delivery_completed';
+          message = 'Delivery completed';
+          color = 'green';
+          break;
+        case 'IN_TRANSIT':
+          activityType = 'delivery_in_transit';
+          message = 'Delivery in transit';
+          color = 'blue';
+          break;
+        case 'CANCELLED':
+          activityType = 'delivery_cancelled';
+          message = 'Delivery cancelled';
+          color = 'red';
+          break;
+        default:
+          activityType = 'delivery_pending';
+          message = 'New delivery created';
+          color = 'yellow';
+      }
+
+      return {
+        id: delivery.id,
+        type: activityType,
+        message,
+        description: `Order ${delivery.trackingNumber} - ${delivery.senderName} to ${delivery.recipientName}`,
+        time: this.getTimeAgo(delivery.createdAt),
+        color,
+      };
+    });
+  }
+
+  private getTimeAgo(dateString: string): string {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60),
+    );
+
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} min ago`;
+    if (diffInMinutes < 1440) {
+      const hours = Math.floor(diffInMinutes / 60);
+      return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    }
+    const days = Math.floor(diffInMinutes / 1440);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  }
 }
