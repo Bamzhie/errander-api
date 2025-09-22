@@ -2,13 +2,13 @@ const https = require('https');
 const http = require('http');
 
 // Replace with your actual Render service URL
-const SERVICE_URL = 'https://errander-api.onrender.com';
+const SERVICE_URL = process.env.RENDER_EXTERNAL_URL || 'https://your-service-name.onrender.com';
 
 // Health check endpoint (adjust if you have a different health check route)
 const HEALTH_ENDPOINT = '/health';
 
 // Ping interval: 14 minutes (just under Render's 15-minute timeout)
-const PING_INTERVAL = 14 * 60 * 1000;
+const PING_INTERVAL = 12 * 60 * 1000;
 
 function pingService() {
   const url = new URL(SERVICE_URL + HEALTH_ENDPOINT);
@@ -53,22 +53,33 @@ function startKeepAlive() {
   console.log(`📍 Target URL: ${SERVICE_URL}${HEALTH_ENDPOINT}`);
   console.log(`⏱️  Ping interval: ${PING_INTERVAL / 1000 / 60} minutes`);
   
-  // Ping immediately on startup
-  pingService();
-  
-  // Set up recurring pings
-  const interval = setInterval(pingService, PING_INTERVAL);
+  // Wait 30 seconds before first ping to allow NestJS app to start
+  console.log('⏳ Waiting 30 seconds for NestJS app to start...');
+  setTimeout(() => {
+    console.log('🎯 Starting keep-alive pings...');
+    pingService();
+    
+    // Set up recurring pings
+    const interval = setInterval(pingService, PING_INTERVAL);
+    
+    // Store interval for cleanup
+    process.keepAliveInterval = interval;
+  }, 30000);
   
   // Graceful shutdown handling
   process.on('SIGTERM', () => {
     console.log('📴 Keep-alive service shutting down...');
-    clearInterval(interval);
+    if (process.keepAliveInterval) {
+      clearInterval(process.keepAliveInterval);
+    }
     process.exit(0);
   });
   
   process.on('SIGINT', () => {
     console.log('📴 Keep-alive service shutting down...');
-    clearInterval(interval);
+    if (process.keepAliveInterval) {
+      clearInterval(process.keepAliveInterval);
+    }
     process.exit(0);
   });
 }
