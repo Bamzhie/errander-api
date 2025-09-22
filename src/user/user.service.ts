@@ -381,21 +381,23 @@ export class UserService {
   }
 
   // Helper method to normalize status values (reuse from previous example)
-  private normalizeStatus(
-    status: string,
-  ): 'pending' | 'in-transit' | 'delivered' | 'cancelled' {
-    const normalizedStatus = status.toLowerCase().trim();
+private normalizeStatus(status: string): DeliveryStatus {
+  const normalizedStatus = status.toLowerCase().trim();
 
-    switch (normalizedStatus) {
-      case 'pending':
-      case 'in-transit':
-      case 'delivered':
-      case 'cancelled':
-        return normalizedStatus;
-      default:
-        return 'pending';
-    }
+  switch (normalizedStatus) {
+    case 'pending':
+    case 'confirmed':
+    case 'picked_up':
+    case 'in-transit':
+    case 'delivered':
+    case 'failed_delivery':
+    case 'cancelled':
+      return normalizedStatus;
+    default:
+      console.warn(`Unknown status: ${status}. Defaulting to 'pending'.`);
+      return 'pending';  // Or throw an error for invalid statuses
   }
+}
 
   update(id: number, updateUserDto: UpdateUserDto) {
     return `This action updates a #${id} user`;
