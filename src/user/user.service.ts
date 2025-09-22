@@ -381,23 +381,23 @@ export class UserService {
   }
 
   // Helper method to normalize status values (reuse from previous example)
-private normalizeStatus(status: string): DeliveryStatus {
-  const normalizedStatus = status.toLowerCase().trim();
+  private normalizeStatus(status: string): DeliveryStatus {
+    const normalizedStatus = status.toLowerCase().trim();
 
-  switch (normalizedStatus) {
-    case 'pending':
-    case 'confirmed':
-    case 'picked_up':
-    case 'in-transit':
-    case 'delivered':
-    case 'failed_delivery':
-    case 'cancelled':
-      return normalizedStatus;
-    default:
-      console.warn(`Unknown status: ${status}. Defaulting to 'pending'.`);
-      return 'pending';  // Or throw an error for invalid statuses
+    switch (normalizedStatus) {
+      case 'pending':
+      case 'confirmed':
+      case 'picked_up':
+      case 'in-transit':
+      case 'delivered':
+      case 'failed_delivery':
+      case 'cancelled':
+        return normalizedStatus;
+      default:
+        console.warn(`Unknown status: ${status}. Defaulting to 'pending'.`);
+        return 'pending'; // Or throw an error for invalid statuses
+    }
   }
-}
 
   update(id: number, updateUserDto: UpdateUserDto) {
     return `This action updates a #${id} user`;
@@ -548,93 +548,122 @@ private normalizeStatus(status: string): DeliveryStatus {
     }
   }
 
-  async findAllErranders() {
-    try {
-      const errandersWithStats = await this.prisma.user.findMany({
-        where: { userType: 'errander' },
-        include: {
-          assignedDeliveries: {
-            select: {
-              deliveryFee: true,
-              createdAt: true,
-            },
-            orderBy: {
-              createdAt: 'desc',
+async findAllErranders() {
+  try {
+    const errandersWithStats = await this.prisma.user.findMany({
+      where: { userType: 'errander' },
+      include: {
+        assignedDeliveries: {
+          include: {
+            sender: {
+              select: {
+                fullName: true,
+                phoneNumber1: true,
+              },
             },
           },
+          orderBy: {
+            createdAt: 'desc',
+          },
         },
-        orderBy: {
-          createdAt: 'desc',
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const formattedErranders = errandersWithStats.map((errander) => {
+      const allDeliveries = errander.assignedDeliveries;
+      const totalDeliveries = allDeliveries.length;
+
+      // Calculate earnings from completed deliveries only
+      const completedDeliveries = allDeliveries.filter(d => d.status === 'DELIVERED');
+      const earnings = completedDeliveries.reduce(
+        (sum, delivery) => sum + (delivery.deliveryFee || 0),
+        0,
+      );
+
+      const lastDelivery = allDeliveries[0];
+      const lastActive = lastDelivery?.createdAt;
+
+      // Status logic for UI
+      let status: string;
+      const hasActiveDeliveries = allDeliveries.some(d => 
+        ['PENDING', 'IN_TRANSIT', 'ON_DELIVERY', 'PICKED_UP'].includes(d.status)
+      );
+      
+      switch (errander.erranderStatus?.toLowerCase()) {
+        case 'approved':
+          status = hasActiveDeliveries ? 'on-trip' : 'available';
+          break;
+        case 'on-delivery':
+          status = 'on-trip';
+          break;
+        case 'suspended':
+        case 'rejected':
+          status = 'offline';
+          break;
+        case 'pending':
+          status = 'pending';
+          break;
+        default:
+          status = 'offline';
+      }
+
+      // Format deliveries for modal table (minimal data)
+      const formattedDeliveries = allDeliveries.map(delivery => ({
+        id: delivery.id,
+        orderNumber: delivery.trackingNumber,
+        status: delivery.status,
+        createdAt: delivery.createdAt,
+        // Minimal sender info
+        sender: {
+          name: delivery.sender?.fullName || delivery.senderName || 'Unknown',
         },
-      });
-
-      const formattedErranders = errandersWithStats.map((errander) => {
-        const deliveries = errander.assignedDeliveries;
-        const totalDeliveries = deliveries.length;
-
-        const earnings = deliveries.reduce(
-          (sum, delivery) => sum + (delivery.deliveryFee || 0),
-          0,
-        );
-
-        const lastDelivery = deliveries[0];
-        const lastActive = lastDelivery?.createdAt;
-
-        let status: string;
-        switch (errander.erranderStatus?.toLowerCase()) {
-          case 'approved':
-            status = 'available';
-            break;
-          case 'on-delivery':
-            status = 'on-trip';
-            break;
-          case 'suspended':
-          case 'rejected':
-          case 'pending':
-            status = 'offline';
-            break;
-          default:
-            status = 'offline';
-        }
-
-        let lastActiveFormatted = 'Never';
-        if (lastActive) {
-          const timeDiff = Date.now() - lastActive.getTime();
-          if (timeDiff < 3600000) {
-            lastActiveFormatted = 'Recent';
-          } else {
-            lastActiveFormatted = lastActive.toISOString().split('T')[0];
-          }
-        }
-
-        return {
-          id: errander.id,
-          name: errander.fullName,
-          email: errander.email || '',
-          phone: errander.phoneNumber1,
-          address: errander.homeAddress,
-          status,
-          totalDeliveries,
-          joinDate: errander.createdAt.toISOString().split('T')[0],
-          lastActive: lastActiveFormatted,
-          earnings,
-          idCardUrl: errander.idCardUrl,
-        };
-      });
+      }));
 
       return {
-        success: true,
-        message: 'Erranders fetched successfully',
-        data: formattedErranders,
+        // Basic info for header and contact section
+        id: errander.id,
+        name: errander.fullName,
+        email: errander.email || '',
+        phone: errander.phoneNumber1,
+        address: errander.homeAddress || 'Not provided',
+        
+        // Status for badge
+        status,
+        
+        // Statistics for performance section
+        totalDeliveries,
+        earnings,
+        joinDate: errander.createdAt.toISOString().split('T')[0],
+        
+        // Recent activity
+        lastActive: lastActive ? lastActive.toISOString().split('T')[0] : 'Never',
+        
+        // ID card for document section
+        idCardUrl: errander.idCardUrl,
+        idCardFileName: errander.idCardFileName || 'Not provided',
+        
+        // Deliveries for history table
+        deliveries: formattedDeliveries,
       };
-    } catch (error) {
-      return {
-        statuscode: '01',
-        status: 'FAILED',
-        message: 'Failed to fetch erranders: ' + error.message,
-      };
-    }
+    });
+
+    return {
+      success: true,
+      message: 'Erranders fetched successfully',
+      data: formattedErranders,
+    };
+  } catch (error) {
+    console.error('Error fetching erranders:', error);
+    return {
+      statuscode: '01',
+      status: 'FAILED',
+      message: 'Failed to fetch erranders: ' + error.message,
+    };
   }
+}
 
   async updateDeliveryStatus(id: string, updateDto: UpdateDeliveryDto) {
     try {
@@ -932,43 +961,56 @@ private normalizeStatus(status: string): DeliveryStatus {
     };
   }
 
-
   async getDashboardData() {
-    // Get all data in parallel for better performance
-    const [totalCustomers, totalErranders, deliveries, erranders] =
-      await Promise.all([
-        this.prisma.user.count({ where: { userType: 'customer' } }),
-        this.prisma.user.count({ where: { userType: 'errander' } }),
-        this.prisma.delivery.findMany(),
-        this.prisma.user.findMany({ where: { userType: 'errander' } }), // Only get erranders
-      ]);
+    // Get all deliveries to analyze statuses
+    const allDeliveries = await this.prisma.delivery.findMany();
 
-    // Process deliveries data (unchanged)
-    const totalDeliveries = deliveries.length;
-    const pendingDeliveries = deliveries.filter(
-      (d) => d.status === 'PENDING',
-    ).length;
-    const completedDeliveries = deliveries.filter(
+    // Count statuses manually
+    const totalDeliveries = allDeliveries.length;
+    const completedDeliveries = allDeliveries.filter(
       (d) => d.status === 'DELIVERED',
     ).length;
-    const inTransitDeliveries = deliveries.filter(
-      (d) => d.status === 'IN_TRANSIT',
-    ).length;
-    const cancelledDeliveries = deliveries.filter(
-      (d) => d.status === 'CANCELLED',
+    const pendingDeliveries = allDeliveries.filter(
+      (d) => d.status === 'pending',
     ).length;
 
-    const totalRevenue = deliveries
+    // Others = everything that's not delivered and not pending
+    const otherDeliveries = allDeliveries.filter(
+      (d) => d.status !== 'DELIVERED' && d.status !== 'pending',
+    ).length;
+
+    // Calculate revenue from completed deliveries
+    const totalRevenue = allDeliveries
       .filter((d) => d.status === 'DELIVERED')
-      .reduce((sum, d) => sum + (d.deliveryFee || 0), 0);
+      .reduce((sum, delivery) => sum + (delivery.deliveryFee || 0), 0);
 
-    // CORRECTED: Use erranderStatus instead of status
+    // Get recent activities (use the same deliveries for consistency)
+    const recentDeliveries = allDeliveries
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .slice(0, 10);
+
+    const recentActivities = this.generateRecentActivities(recentDeliveries);
+
+    // Get user counts
+    const [totalCustomers, totalErranders] = await Promise.all([
+      this.prisma.user.count({ where: { userType: 'customer' } }),
+      this.prisma.user.count({ where: { userType: 'errander' } }),
+    ]);
+
+    // Get errander status counts
+    const erranders = await this.prisma.user.findMany({
+      where: { userType: 'errander' },
+    });
+
     const availableErranders = erranders.filter(
-      (e) => e.erranderStatus === 'APPROVED', 
+      (e) => e.erranderStatus === 'APPROVED',
     ).length;
 
     const onTripErranders = erranders.filter(
-      (e) => e.erranderStatus === 'ON-DELIVERY', 
+      (e) => e.erranderStatus === 'ON-DELIVERY',
     ).length;
 
     const offlineErranders = erranders.filter(
@@ -983,9 +1025,6 @@ private normalizeStatus(status: string): DeliveryStatus {
         e.erranderStatus === 'APPROVED' || e.erranderStatus === 'ON-DELIVERY',
     ).length;
 
-    // Generate recent activities
-    const recentActivities = this.generateRecentActivities(deliveries);
-
     return {
       success: true,
       message: 'Dashboard data fetched successfully',
@@ -996,8 +1035,7 @@ private normalizeStatus(status: string): DeliveryStatus {
           totalDeliveries,
           pendingDeliveries,
           completedDeliveries,
-          inTransitDeliveries,
-          cancelledDeliveries,
+          otherDeliveries, // This will be 1 (the failed_delivery)
           activeErranders,
           availableErranders,
           onTripErranders,
