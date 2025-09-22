@@ -930,66 +930,82 @@ export class UserService {
     };
   }
 
-async getDashboardData() {
-  // Get all data in parallel for better performance
-  const [totalCustomers, totalErranders, deliveries, users] = await Promise.all([
-    this.prisma.user.count({ where: { userType: 'customer' } }),
-    this.prisma.user.count({ where: { userType: 'errander' } }),
-    this.prisma.delivery.findMany(),
-    this.prisma.user.findMany(),
-  ]);
 
-  // Process deliveries data
-  const totalDeliveries = deliveries.length;
-  const pendingDeliveries = deliveries.filter((d) => d.status === 'PENDING').length;
-  const completedDeliveries = deliveries.filter((d) => d.status === 'DELIVERED').length;
-  const inTransitDeliveries = deliveries.filter((d) => d.status === 'IN_TRANSIT').length;
-  const cancelledDeliveries = deliveries.filter((d) => d.status === 'CANCELLED').length;
+  async getDashboardData() {
+    // Get all data in parallel for better performance
+    const [totalCustomers, totalErranders, deliveries, erranders] =
+      await Promise.all([
+        this.prisma.user.count({ where: { userType: 'customer' } }),
+        this.prisma.user.count({ where: { userType: 'errander' } }),
+        this.prisma.delivery.findMany(),
+        this.prisma.user.findMany({ where: { userType: 'errander' } }), // Only get erranders
+      ]);
 
-  // Calculate total revenue based on deliveryFee of DELIVERED deliveries
-  const totalRevenue = deliveries
-    .filter((d) => d.status === 'DELIVERED')
-    .reduce((sum, d) => sum + (d.deliveryFee || 0), 0);
+    // Process deliveries data (unchanged)
+    const totalDeliveries = deliveries.length;
+    const pendingDeliveries = deliveries.filter(
+      (d) => d.status === 'PENDING',
+    ).length;
+    const completedDeliveries = deliveries.filter(
+      (d) => d.status === 'DELIVERED',
+    ).length;
+    const inTransitDeliveries = deliveries.filter(
+      (d) => d.status === 'IN_TRANSIT',
+    ).length;
+    const cancelledDeliveries = deliveries.filter(
+      (d) => d.status === 'CANCELLED',
+    ).length;
 
-  // Process erranders data
-  const erranders = users.filter((u) => u.userType === 'errander');
-  const availableErranders = erranders.filter(
-    (e) => e.status === 'active' && e.erranderStatus === 'APPROVED',
-  ).length;
-  const onTripErranders = erranders.filter(
-    (e) => e.status === 'active' && e.erranderStatus === 'APPROVED',
-  ).length; // You may want to refine this based on trips
-  const offlineErranders = erranders.filter((e) => e.status !== 'active').length;
-  const activeErranders = erranders.filter(
-    (e) => e.status === 'active' && e.erranderStatus === 'APPROVED',
-  ).length;
+    const totalRevenue = deliveries
+      .filter((d) => d.status === 'DELIVERED')
+      .reduce((sum, d) => sum + (d.deliveryFee || 0), 0);
 
-  // Generate recent activities
-  const recentActivities = this.generateRecentActivities(deliveries);
+    // CORRECTED: Use erranderStatus instead of status
+    const availableErranders = erranders.filter(
+      (e) => e.erranderStatus === 'APPROVED', 
+    ).length;
 
-  return {
-    success: true,
-    message: 'Dashboard data fetched successfully',
-    data: {
-      stats: {
-        totalRevenue,
-        totalCustomers,
-        totalDeliveries,
-        pendingDeliveries,
-        completedDeliveries,
-        inTransitDeliveries,
-        cancelledDeliveries,
-        activeErranders,
-        availableErranders,
-        onTripErranders,
-        offlineErranders,
-        totalErranders,
+    const onTripErranders = erranders.filter(
+      (e) => e.erranderStatus === 'ON-DELIVERY', 
+    ).length;
+
+    const offlineErranders = erranders.filter(
+      (e) =>
+        e.erranderStatus === 'PENDING' ||
+        e.erranderStatus === 'SUSPENDED' ||
+        e.erranderStatus === 'REJECTED',
+    ).length;
+
+    const activeErranders = erranders.filter(
+      (e) =>
+        e.erranderStatus === 'APPROVED' || e.erranderStatus === 'ON-DELIVERY',
+    ).length;
+
+    // Generate recent activities
+    const recentActivities = this.generateRecentActivities(deliveries);
+
+    return {
+      success: true,
+      message: 'Dashboard data fetched successfully',
+      data: {
+        stats: {
+          totalRevenue,
+          totalCustomers,
+          totalDeliveries,
+          pendingDeliveries,
+          completedDeliveries,
+          inTransitDeliveries,
+          cancelledDeliveries,
+          activeErranders,
+          availableErranders,
+          onTripErranders,
+          offlineErranders,
+          totalErranders,
+        },
+        recentActivities,
       },
-      recentActivities,
-    },
-  };
-}
-// helpers
+    };
+  }
 
   private generateRecentActivities(deliveries: any[]) {
     const sortedDeliveries = deliveries
